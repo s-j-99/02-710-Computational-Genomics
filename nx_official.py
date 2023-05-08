@@ -11,7 +11,7 @@ import scipy.stats
 all_data = pd.read_csv(
     "glioblastoma/BIOGRID-PROJECT-glioblastoma_project-INTERACTIONS-4.4.220.tab3.csv")
 
-all_data = all_data[(all_data['Organism Name Interactor A'] == "Homo sapiens") & (
+all_data_h = all_data[(all_data['Organism Name Interactor A'] == "Homo sapiens") & (
     all_data['Organism Name Interactor B'] == "Homo sapiens")]
 
 # Example code to predefine variouos motifs in directed graphs
@@ -19,6 +19,10 @@ all_data = all_data[(all_data['Organism Name Interactor A'] == "Homo sapiens") &
 # Feed-Forward Loop (FFL)
 
 ffl = nx.DiGraph([(1, 2), (2, 3), (1, 3)])
+
+# 3-Cycle
+
+tcc = nx.DiGraph([(1, 2), (2, 3), (3, 1)])
 
 # Single Input Module (SIM)
 
@@ -150,8 +154,14 @@ Uncomment below for optimizing random graph parameters.
 # Load the glioblastoma data into a directed network
 
 Graphtype = nx.DiGraph()
-g_glio_human = nx.from_pandas_edgelist(all_data, source="Official Symbol Interactor A",
+g_glio_all = nx.from_pandas_edgelist(all_data, source="Official Symbol Interactor A",
+                                     target='Official Symbol Interactor B', create_using=Graphtype)
+g_glio_human = nx.from_pandas_edgelist(all_data_h, source="Official Symbol Interactor A",
                                        target='Official Symbol Interactor B', create_using=Graphtype)
+print("All: ", len(all_data.index))
+print("Human: ", len(all_data_h.index))
+print("All data: ", g_glio_all)
+print("Human data: ", g_glio_human)
 
 '''
 This part finds the number of BiFan motifs in the 3 types of graphs.
@@ -159,7 +169,20 @@ This part finds the number of BiFan motifs in the 3 types of graphs.
 print("Running simulations for BiFan Motifs")
 k = 30
 m = 2
+p = m / 1000.0 + 0.1
 num_simulations = 100
+
+
+this_ba_graph = nx.barabasi_albert_graph(k, m).to_directed()
+this_er_graph = nx.erdos_renyi_graph(k, p).to_directed()
+
+nx.draw(this_ba_graph, pos=nx.spring_layout(this_ba_graph))
+plt.show()
+plt.clf()
+nx.draw(this_er_graph, pos=nx.spring_layout(this_er_graph))
+plt.show()
+plt.clf()
+
 random_ba_motifs = np.zeros(shape=(num_simulations,))
 random_er_motifs = np.zeros(shape=(num_simulations,))
 glioblastoma_motifs = np.zeros(shape=(num_simulations,))
@@ -238,6 +261,7 @@ print("P-VALUE: Glioblastoma vs Barabasi-Albert: {ba} || Glioblastoma vs Erdos-R
 '''
 This part finds the number of FFL motifs in the 3 types of graphs.
 '''
+
 print("Running simulations for FFL Motifs")
 
 k = 30
@@ -307,6 +331,89 @@ p_value_ba = scipy.stats.norm.sf(abs(Z_ba))
 p_value_er = scipy.stats.norm.sf(abs(Z_er))
 
 print("### Results for FFL Motif ###")
+print("MEANS: Barabasi-Albert: {ba} || Erdos-Renyi: {er} || Glioblastoma: {gb}".format(
+    ba=mean_ba, er=mean_er, gb=mean_glioblastoma))
+print("SD: Barabasi-Albert: {ba} || Erdos-Renyi: {er} || Glioblastoma: {gb}".format(
+    ba=std_ba, er=std_er, gb=std_glioblastoma))
+print(
+    "Z-SCORE: Glioblastoma vs Barabasi-Albert: {ba} || Glioblastoma vs Erdos-Renyi: {er}".format(ba=Z_ba, er=Z_er))
+print("P-VALUE: Glioblastoma vs Barabasi-Albert: {ba} || Glioblastoma vs Erdos-Renyi: {er}".format(
+    ba=p_value_ba, er=p_value_er))
+
+
+'''
+This part finds the number of 3-cycle motifs in the 3 types of graphs.
+'''
+
+print("Running simulations for 3-Cycle Motifs")
+
+k = 30
+m = 2
+num_simulations = 100
+random_ba_motifs = np.zeros(shape=(num_simulations,))
+random_er_motifs = np.zeros(shape=(num_simulations,))
+glioblastoma_motifs = np.zeros(shape=(num_simulations,))
+for simulation in range(num_simulations):
+
+    this_ba_graph = nx.barabasi_albert_graph(k, m).to_directed()
+
+    ba_motifs = find_motifs(tcc, this_ba_graph)
+    random_ba_motifs[simulation] = len(ba_motifs)
+
+    p = m / 1000.0 + 0.1
+    this_er_graph = nx.erdos_renyi_graph(k, p).to_directed()
+
+    er_motifs = find_motifs(tcc, this_er_graph)
+    random_er_motifs[simulation] = len(er_motifs)
+
+    random_sample_edges = random.sample(list(g_glio_human.edges), 3000)
+    G_sample = nx.DiGraph()
+    G_sample.add_edges_from(random_sample_edges)
+
+    these_glioblastoma_motifs = find_motifs(tcc, G_sample)
+    glioblastoma_motifs[simulation] = len(these_glioblastoma_motifs)
+
+
+# approximately normalize
+glioblastoma_motifs /= 10
+
+print("Plotting graphs for 3-Cycle motifs")
+
+fig, axes = plt.subplots(3, 1, sharex=True)
+
+plt.suptitle("Frequency of 3-Cycle Motifs in Each Graph Type")
+
+axes[0].hist(random_ba_motifs)
+axes[0].set_title(
+    "Number of 3-Cycle Motifs in Random Barbasi Albert Graph", fontsize=10)
+
+axes[1].hist(random_er_motifs)
+axes[1].set_title(
+    "Number of 3-Cycle Motifs in Random Erdos Renyi Graph", fontsize=10)
+
+axes[2].hist(glioblastoma_motifs)
+axes[2].set_title(
+    "Number of 3-Cycle Motifs Across Random Subsamples of Glioblastoma Graph", fontsize=10)
+plt.xlim(0, 250)
+plt.tight_layout()
+plt.show()
+
+print("Running statistical tests.")
+mean_glioblastoma = np.mean(glioblastoma_motifs)
+mean_ba = np.mean(random_ba_motifs)
+mean_er = np.mean(random_er_motifs)
+std_glioblastoma = np.std(glioblastoma_motifs)
+std_ba = np.std(random_ba_motifs)
+std_er = np.std(random_er_motifs)
+
+Z_ba = (mean_glioblastoma - mean_ba) / std_ba
+Z_er = (mean_glioblastoma - mean_er) / std_er
+
+p_value_ba = scipy.stats.norm.sf(abs(Z_ba))
+
+p_value_er = scipy.stats.norm.sf(abs(Z_er))
+
+print("### Results for 3-Cycle Motif ###")
 print("MEANS: Barabasi-Albert: {ba} || Erdos-Renyi: {er} || Glioblastoma: {gb}".format(
     ba=mean_ba, er=mean_er, gb=mean_glioblastoma))
 print("SD: Barabasi-Albert: {ba} || Erdos-Renyi: {er} || Glioblastoma: {gb}".format(
